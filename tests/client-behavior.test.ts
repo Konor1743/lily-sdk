@@ -1,11 +1,161 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { PaymentClient } from '../src/clients/payment-client';
 import { LilyAuthenticationError } from '../src/errors/sdk-error';
 import { createFetchHttpClient } from '../src/http/fetch-http-client';
 import { LilySdk } from '../src/sdk';
 import { createMockHttpClient } from './helpers/mock-http-client';
 
 describe('client behavior', () => {
+  it.each([
+    '1',
+    '1.0',
+    '01.5',
+    '0.0000001',
+    '0.000001',
+    '0',
+    '0.00',
+    '100.0000000',
+    '1e-5',
+    '1.5e3',
+    '.5',
+    '10.',
+    '-5.25',
+    '1000000000000',
+  ])(
+    'passes MoneyAmount string %s through payment requests unchanged',
+    async (amount) => {
+      const requestSpy = vi.fn(() =>
+        Promise.resolve({
+          status: 200,
+          headers: new Headers(),
+          data: {},
+        }),
+      );
+
+      const sdk = new LilySdk(
+        {
+          baseUrl: 'https://api.lily.test',
+          fetch: globalThis.fetch,
+        },
+        createMockHttpClient(requestSpy),
+      );
+
+      const moneyAmount = {
+        assetCode: 'USDC',
+        assetIssuer: 'GISSUER1234567890',
+        amount,
+      };
+
+      await sdk.payments.quote({
+        fromWalletId: 'wallet-123',
+        toAddress: 'GDESTINATION123',
+        amount: moneyAmount,
+      });
+
+      await sdk.payments.execute({
+        fromWalletId: 'wallet-123',
+        toAddress: 'GDESTINATION123',
+        amount: moneyAmount,
+        memo: 'test-memo',
+        idempotencyKey: 'idem-456',
+      });
+
+      expect(requestSpy).toHaveBeenNthCalledWith(1, {
+        method: 'POST',
+        path: '/v1/payments/quote',
+        body: {
+          fromWalletId: 'wallet-123',
+          toAddress: 'GDESTINATION123',
+          amount: {
+            assetCode: 'USDC',
+            assetIssuer: 'GISSUER1234567890',
+            amount,
+          },
+        },
+      });
+
+      expect(requestSpy).toHaveBeenNthCalledWith(2, {
+        method: 'POST',
+        path: '/v1/payments',
+        body: {
+          fromWalletId: 'wallet-123',
+          toAddress: 'GDESTINATION123',
+          amount: {
+            assetCode: 'USDC',
+            assetIssuer: 'GISSUER1234567890',
+            amount,
+          },
+          memo: 'test-memo',
+          idempotencyKey: 'idem-456',
+        },
+      });
+    },
+  );
+
+  it('calls payment endpoints directly via PaymentClient instance', async () => {
+    const requestSpy = vi.fn(() =>
+      Promise.resolve({
+        status: 200,
+        headers: new Headers(),
+        data: {},
+      }),
+    );
+
+    const client = new PaymentClient(createMockHttpClient(requestSpy));
+
+    await client.quote({
+      fromWalletId: 'wallet-abc',
+      toAddress: 'GDEST-abc',
+      amount: {
+        assetCode: 'XLM',
+        amount: '42.000',
+      },
+    });
+
+    await client.execute({
+      fromWalletId: 'wallet-abc',
+      toAddress: 'GDEST-abc',
+      amount: {
+        assetCode: 'XLM',
+        amount: '42.000',
+      },
+    });
+
+    await client.get('pay-789');
+
+    expect(requestSpy).toHaveBeenNthCalledWith(1, {
+      method: 'POST',
+      path: '/v1/payments/quote',
+      body: {
+        fromWalletId: 'wallet-abc',
+        toAddress: 'GDEST-abc',
+        amount: {
+          assetCode: 'XLM',
+          amount: '42.000',
+        },
+      },
+    });
+
+    expect(requestSpy).toHaveBeenNthCalledWith(2, {
+      method: 'POST',
+      path: '/v1/payments',
+      body: {
+        fromWalletId: 'wallet-abc',
+        toAddress: 'GDEST-abc',
+        amount: {
+          assetCode: 'XLM',
+          amount: '42.000',
+        },
+      },
+    });
+
+    expect(requestSpy).toHaveBeenNthCalledWith(3, {
+      method: 'GET',
+      path: '/v1/payments/pay-789',
+    });
+  });
+
   it('calls system health endpoint through the system client', async () => {
     const requestSpy = vi.fn(() =>
       Promise.resolve({
