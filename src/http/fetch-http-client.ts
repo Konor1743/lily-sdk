@@ -97,7 +97,7 @@ export function createFetchHttpClient(config: ResolvedLilySdkConfig): HttpClient
   };
 }
 
-function buildUrl(
+export function buildUrl(
   baseUrl: URL,
   path: string,
   query?: Record<string, string | number | boolean | undefined>,
